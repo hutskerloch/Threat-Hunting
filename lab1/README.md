@@ -366,7 +366,7 @@ questions.)
 
     > setwd(old.dir)
 
-###Шаг 6. Подкурс Sequences of Numbers
+### Шаг 6. Подкурс Sequences of Numbers
 
 The simplest way to create a sequence of numbers in R is by using the
 `:` operator. Type  
@@ -478,7 +478,7 @@ do this with the
 
      [1] 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2
 
-###Шаг 6. Подкурс Vectors
+### Шаг 7. Подкурс Vectors
 
 First, create a numeric vector num_vect that contains the values 0.5,
 55, -10, and 6.
@@ -609,11 +609,132 @@ alphabet.
     [1] "A-1" "B-2" "C-3" "D-4" "E-1" "F-2" "G-3" "H-4" "I-1" "J-2" "K-3" "L-4" "M-1" "N-2" "O-3"
     [16] "P-4" "Q-1" "R-2" "S-3" "T-4" "U-1" "V-2" "W-3" "X-4" "Y-1" "Z-2"
 
+### Шаг 8. Подкурс Missing Values
+
+Any operation involving NA generally yields NA as the result. To
+illustrate, let’s create a  
+vector c(44, NA, 5, NA) and assign it to a variable x.
+
+    > x <- c (44, NA, 5, NA)
+
+Now, let’s multiply x by 3.
+
+    > x * 3
+
+    [1] 132  NA  15  NA
+
+To make things a little more interesting, lets create a vector
+containing 1000 draws from a  
+standard normal distribution with y \<- rnorm(1000).
+
+    > y <- rnorm(1000)
+
+Next, let’s create a vector containing 1000 NAs with z \<- rep(NA, 1000)
+
+    > z <- rep(NA, 1000)
+
+Finally, let’s select 100 elements at random from these 2000 values
+(combining y and z) such  
+that we don’t know how many NAs we’ll wind up with or what positions
+they’ll occupy in our  
+final vector – my_data \<- sample(c(y, z), 100).
+
+    > my_data <- sample(c(y, z), 100)
+
+Let’s first ask the question of where our NAs are located in our data.
+The is.na() function  
+tells us whether each element of a vector is NA. Call is.na() on my_data
+and assign the  
+result to my_na.
+
+    > my_na <- is.na(my_data)
+
+Now, print my_na to see what you came up with.
+
+    > my_na
+
+      [1]  TRUE  TRUE FALSE  TRUE FALSE  TRUE FALSE  TRUE FALSE FALSE  TRUE FALSE FALSE  TRUE FALSE
+     [16] FALSE FALSE  TRUE  TRUE FALSE  TRUE FALSE FALSE FALSE  TRUE  TRUE FALSE  TRUE FALSE  TRUE
+     [31] FALSE FALSE FALSE  TRUE FALSE  TRUE  TRUE  TRUE  TRUE FALSE  TRUE  TRUE FALSE  TRUE FALSE
+     [46]  TRUE  TRUE  TRUE FALSE FALSE FALSE  TRUE  TRUE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE FALSE
+     [61] FALSE  TRUE FALSE  TRUE FALSE  TRUE  TRUE  TRUE FALSE FALSE FALSE FALSE FALSE FALSE  TRUE
+     [76] FALSE FALSE FALSE FALSE  TRUE FALSE  TRUE FALSE  TRUE FALSE FALSE FALSE  TRUE  TRUE FALSE
+     [91]  TRUE  TRUE FALSE  TRUE FALSE  TRUE FALSE  TRUE FALSE  TRUE
+
+In our previous discussion of logical operators, we introduced the `==`
+operator as a method  
+of testing for equality between two objects. So, you might think the
+expression my_data ==  
+NA yields the same results as is.na(). Give it a try.
+
+    > my_data == NA
+
+      [1] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+     [31] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+     [61] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+     [91] NA NA NA NA NA NA NA NA NA NA
+
+Let’s give that a try here. Call the sum() function on my_na to count
+the total number of  
+TRUEs in my_na, and thus the total number of NAs in my_data. Don’t
+assign the result to a  
+new variable.
+
+    > sum(my_na)
+
+    [1] 49
+
+Pretty cool, huh? Finally, let’s take a look at the data to convince
+ourselves that  
+everything ‘adds up’. Print my_data to the console.
+
+    > my_data
+
+      [1]           NA           NA -0.485825997           NA -0.285410200           NA
+      [7] -1.110359593           NA -1.184249616  0.388291638           NA -0.592519459
+     [13] -0.413439789           NA -0.088881953 -0.153867984  0.565642288           NA
+     [19]           NA  0.387833691           NA -2.504657067  0.956324030 -0.086975644
+     [25]           NA           NA  1.635251395           NA -0.145124956           NA
+     [31]  0.188573866 -0.943391571 -0.094672292           NA  0.634065877           NA
+     [37]           NA           NA           NA  0.588997679           NA           NA
+     [43]  0.712493052           NA -0.432205468           NA           NA           NA
+     [49] -1.569178989  0.310020500 -1.400682973           NA           NA  0.972545791
+     [55]           NA           NA           NA           NA           NA -0.173816431
+     [61] -0.837592412           NA -0.761357917           NA  0.675222097           NA
+     [67]           NA           NA -0.358957796  0.271100735 -1.662386209  0.258487538
+     [73] -1.755947918 -0.087254934           NA  0.493285043  0.222140270 -0.140279952
+     [79] -2.468131343           NA -0.007041218           NA -0.998001975           NA
+     [85]  0.077402604 -0.925953416  0.331953242           NA           NA -0.695591190
+     [91]           NA           NA  1.516540235           NA  1.197248051           NA
+     [97] -1.148218713           NA -1.479016377           NA
+
+Now that we’ve got NAs down pat, let’s look at a second type of missing
+value – NaN, which  
+stands for ‘not a number’. To generate NaN, try dividing (using a
+forward slash) 0 by 0 now.
+
+    > 0/0
+
+    [1] NaN
+
+Let’s do one more, just for fun. In R, Inf stands for infinity. What
+happens if you subtract  
+Inf from Inf?
+
+    > Inf - Inf
+
+    [1] NaN
+
 ## Оценка результата
 
-В результате лабораторной работы мы определили IP-адрес злоумышленика.
+В результате лабораторной работы мы:
+
+1.  Установили и настроили среду рабочую среду Rstudio и R
+
+2.  Научились составлять отчет в формате RMarkdown
+
+3.  Изучили бызовые навыки работы с языком R, основы и особенности языка
 
 ## Вывод
 
-Таким образом, мы научились анализировать предоставляемый файл и
-находить ip-адрес злоумышленника.
+Изучены основы языка R с помощью учебных заданий swirl.
