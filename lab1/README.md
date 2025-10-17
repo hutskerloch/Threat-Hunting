@@ -39,6 +39,34 @@ artogal@yandex.ru
 
 В данном шаге происходит установка и настройка рабочего окружения.
 
+``` r
+print(sessionInfo())
+```
+
+    R version 4.5.1 (2025-06-13 ucrt)
+    Platform: x86_64-w64-mingw32/x64
+    Running under: Windows 11 x64 (build 26100)
+
+    Matrix products: default
+      LAPACK version 3.12.1
+
+    locale:
+    [1] LC_COLLATE=Russian_Russia.utf8  LC_CTYPE=Russian_Russia.utf8   
+    [3] LC_MONETARY=Russian_Russia.utf8 LC_NUMERIC=C                   
+    [5] LC_TIME=Russian_Russia.utf8    
+
+    time zone: Europe/Moscow
+    tzcode source: internal
+
+    attached base packages:
+    [1] stats     graphics  grDevices utils     datasets  methods   base     
+
+    loaded via a namespace (and not attached):
+     [1] compiler_4.5.1    fastmap_1.2.0     cli_3.6.5         tools_4.5.1      
+     [5] htmltools_0.5.8.1 yaml_2.3.10       rmarkdown_2.29    knitr_1.50       
+     [9] jsonlite_2.0.0    xfun_0.53         digest_0.6.37     rlang_1.1.6      
+    [13] evaluate_1.0.5   
+
 С сайта <https://posit.co/> скачиваем интерпритатор R и RStudio
 
 ![](images/clipboard-3941027058.png)
@@ -738,3 +766,9 @@ Inf from Inf?
 ## Вывод
 
 Изучены основы языка R с помощью учебных заданий swirl.
+
+``` r
+4 + 1
+```
+
+    [1] 5
