@@ -1,5 +1,5 @@
 ---
-title: "Введение в R"
+title: "Основы обработки данных с помощью R и Dplyr"
 author: "artogal@yandex.ru"
 format: 
   md:
