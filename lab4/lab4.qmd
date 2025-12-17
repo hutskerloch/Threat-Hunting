@@ -41,7 +41,7 @@ format:
 ```{r}
 print(sessionInfo())
 ```
-```{r}
+```
 install.packages("tidyverse")
 install.packages("lubridate")
 install.packages("jsonlite")
