@@ -1,0 +1,501 @@
+---
+title: "Исследование метаданных DNS трафика"
+author: "artogal@yandex.ru"
+format: 
+  md:
+    output-file: README.md
+---
+
+## Цель работы
+
+1.  Зекрепить практические навыки использования языка программирования R для обработки данных
+2.  Закрепить знания основных функций обработки данных экосистемы `tidyverse` языка R
+3.  Закрепить навыки исследования метаданных DNS трафика
+
+## Исходные данные
+
+1.  Компьютер
+2.  ОС Windows
+3.  Rstudio
+4.  Библиотека `dply`
+5.  Github
+
+## План
+
+1.  Импортируйте данные DNS – https://storage.yandexcloud.net/dataset.ctfsec/dns.zip
+2.  Добавьте пропущенные данные о структуре данных (назначении столбцов)
+3.  Преобразуйте данные в столбцах в нужный формат
+4.  Просмотрите общую структуру данных с помощью функции `glimpse()`
+5.  Сколько участников информационного обмена в сети Доброй Организации?
+6.  Какое соотношение участников обмена внутри сети и участников обращений к внешним ресурсам?
+7.  Найдите топ-10 участников сети, проявляющих наибольшую сетевую активность.
+8.  Найдите топ-10 доменов, к которым обращаются пользователи сети и соответственное количество обращений
+9.  Опеределите базовые статистические характеристики (функция `summary()` ) интервала времени между последовательными обращениями к топ-10 доменам.
+10. Часто вредоносное программное обеспечение использует DNS канал в качестве канала управления, периодически отправляя запросы на подконтрольный злоумышленникам DNS сервер. По периодическим запросам на один и тот же домен можно выявить скрытый DNS канал. Есть ли такие IP адреса в исследуемом датасете?
+11. Определите местоположение (страну, город) и организацию-провайдера для топ-10 доменов. Для этого можно использовать сторонние сервисы, например http://ip-api.com (API-эндпоинт – http://ip-api.com/json).
+
+## Шаги 1-4. Подготовка данных
+
+### Шаг 1.Установка библиотек
+
+```{r}
+print(sessionInfo())
+```
+```{r}
+install.packages("tidyverse")
+install.packages("lubridate")
+install.packages("jsonlite")
+install.packages("httr")
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+### Шаг 2-3. Импорт данных и добавление пропущенных данных
+
+```{r}
+dns_data <- read_tsv("dns.log", 
+                     col_names = FALSE, 
+                     comment = "#", 
+                     show_col_types = FALSE)
+                    
+
+
+col_names <- c("ts", "uid", "id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p", 
+                  "proto", "trans_id", "query", "qclass", "qclass_name", "qtype", 
+                  "qtype_name", "rcode", "rcode_name", "AA", "TC", "RD", "RA", 
+                  "Z", "answers", "TTLs", "rejected")
+
+colnames(dns_data) <- col_names
+head(dns_data)
+```
+
+### Шаг 4. Просмотр структуры данных
+
+```{r}
+glimpse(dns_data)
+```
+## Шаги 5-10. Анализ данных
+
+### Шаг 5. Сколько участников информационного обмена в сети Доброй Организации?
+
+```{r}
+all_ips <- unique(c(dns_data$id.orig_h, dns_data$id.resp_h))
+cat("Количество уникальных участников (IP-адресов):", length(all_ips), "\n")
+```
+
+### Шаг 6. Какое соотношение участников обмена внутри сети и участников обращений к внешним ресурсам?
+
+```{r}
+is_private <- function(ip) {
+  # Проверка на частные адреса (RFC 1918)
+  str_detect(ip, "^(10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.)")
+}
+
+internal_ips <- all_ips[sapply(all_ips, is_private)]
+external_ips <- setdiff(all_ips, internal_ips)
+
+
+cat("Соотношение (внутр/внеш):", 
+    round(length(internal_ips)/length(external_ips), 2), "\n\n")
+```
+
+### Шаг 7. Найдите топ-10 участников сети, проявляющих наибольшую сетевую активность.
+
+```{r}
+top_clients <- dns_data %>%
+  count(id.orig_h, name = "request_count") %>%
+  arrange(desc(request_count)) %>%
+  head(10)
+
+print(top_clients)
+```
+
+### Шаг 8. Найдите топ-10 доменов, к которым обращаются пользователи сети и соответственное количество обращений
+
+```{r}
+top_domains <- dns_data %>%
+  filter(!is.na(query)) %>%
+  count(query, name = "request_count") %>%
+  arrange(desc(request_count)) %>%
+  head(10)
+
+print(top_domains)
+```
+
+### Шаг 9. Опеределите базовые статистические характеристики (функция summary() ) интервала времени между последовательными обращениями к топ-10 доменам.
+
+```{r}
+top_domain_names <- top_domains$query
+
+time_intervals <- dns_data %>%
+  filter(query %in% top_domain_names) %>%
+  arrange(query, ts) %>%
+  group_by(query) %>%
+  mutate(time_diff = as.numeric(ts - lag(ts))) %>%
+  filter(!is.na(time_diff))
+
+
+summary_stats <- time_intervals %>%
+  group_by(query) %>%
+  summarise(
+    min = min(time_diff),
+    q1 = quantile(time_diff, 0.25),
+    median = median(time_diff),
+    mean = mean(time_diff),
+    q3 = quantile(time_diff, 0.75),
+    max = max(time_diff)
+  )
+print(summary_stats)
+```
+
+### Шаг 10. Поиск IP-адресов с периодическими запросами на один домен (из топ-10 доменов)
+
+```{r}
+find_periodic_requests <- function(data, threshold = 0.9) {
+  # Функция для поиска IP с периодическими запросами
+  suspicious_ips <- data.frame()
+  
+  unique_ips <- unique(data$id.orig_h)
+  
+  for(ip in unique_ips) {
+    ip_data <- data %>%
+      filter(id.orig_h == ip) %>%
+      arrange(ts)
+    
+    if(nrow(ip_data) > 10) {
+      # Вычисляем интервалы между запросами
+      ip_data <- ip_data %>%
+        mutate(time_diff = c(NA, diff(as.numeric(ts))))
+      
+      # Ищем одинаковые домены с регулярными интервалами
+      domain_patterns <- ip_data %>%
+        filter(!is.na(time_diff)) %>%
+        group_by(query) %>%
+        summarise(
+          request_count = n(),
+          sd_interval = sd(time_diff),
+          mean_interval = mean(time_diff)
+        ) %>%
+        filter(request_count > 5, sd_interval < mean_interval * 0.3)
+      
+      if(nrow(domain_patterns) > 0) {
+        for(i in 1:nrow(domain_patterns)) {
+          suspicious_ips <- bind_rows(suspicious_ips, 
+            data.frame(
+              ip = ip,
+              domain = domain_patterns$query[i],
+              requests = domain_patterns$request_count[i],
+              mean_interval = round(domain_patterns$mean_interval[i], 2),
+              regularity = "Высокая"
+            ))
+        }
+      }
+    }
+  }
+  return(suspicious_ips)
+}
+
+suspicious <- find_periodic_requests(dns_data)
+if(nrow(suspicious) > 0) {
+  cat("Найдены подозрительные активности:\n")
+  print(suspicious)
+} else {
+  cat("Явных признаков скрытых DNS-каналов не обнаружено\n")
+}
+```
+
+## Шаг 11. Обогащение данных
+
+### Определите местоположение (страну, город) и организацию-провайдера для топ-10 доменов.
+
+```{r}
+# Задача 9: Определите местоположение (страну, город) и организацию-провайдера для топ-10 доменов.
+if (!exists("top_domains")) {
+  top_domains <- dns_data %>%
+    filter(!is.na(query), query != "") %>%
+    count(query, name = "request_count") %>%
+    arrange(desc(request_count)) %>%
+    head(10)
+}
+
+top_10_domains <- top_domains$query
+cat("Топ-10 доменов для геолокации:\n")
+print(top_10_domains)
+
+# Ваш улучшенный код функции get_geo_info
+get_geo_info <- function(ip) {
+  if (is.na(ip) || ip == "") {
+     return(tibble(
+      ip_address = NA_character_,
+      country = "IP не определён",
+      city = "IP не определён",
+      isp = "IP не определён"
+    ))
+  }
+  
+  # Проверка на частные IP-адреса
+  if (grepl("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.)", ip)) {
+    return(tibble(
+      ip_address = ip,
+      country = "Частный IP",
+      city = "Частный IP",
+      isp = "Частный IP"
+    ))
+  }
+  
+  # Запрос к API
+  url <- paste0("http://ip-api.com/json/", ip)
+  
+  response <- tryCatch({
+    GET(url, timeout(10))
+  }, error = function(e) {
+    return(NULL)
+  })
+  
+  if (is.null(response) || status_code(response) != 200) {
+    return(tibble(
+      ip_address = ip,
+      country = "Ошибка API",
+      city = "Ошибка API",
+      isp = "Ошибка API"
+    ))
+  }
+  
+  data <- tryCatch({
+    fromJSON(content(response, "text", encoding = "UTF-8"))
+  }, error = function(e) {
+    return(list(status = "fail", message = "JSON parse error"))
+  })
+  
+  if (data$status == "success") {
+    return(tibble(
+      ip_address = ip,
+      country = ifelse(is.null(data$country), "Неизвестно", data$country),
+      city = ifelse(is.null(data$city), "Неизвестно", data$city),
+      isp = ifelse(is.null(data$isp), "Неизвестно", data$isp),
+      org = ifelse(is.null(data$org), "Неизвестно", data$org),
+      lat = ifelse(is.null(data$lat), NA, data$lat),
+      lon = ifelse(is.null(data$lon), NA, data$lon)
+    ))
+  } else {
+    return(tibble(
+      ip_address = ip,
+      country = paste("API ошибка:", ifelse(is.null(data$message), data$status, data$message)),
+      city = "Ошибка",
+      isp = "Ошибка"
+    ))
+  }
+}
+
+# Функция для извлечения IP из столбца answers
+extract_ip_from_answers <- function(answer_string) {
+  if (is.na(answer_string) || answer_string == "" || answer_string == "-" || answer_string == "(empty)") {
+    return(NA)
+  }
+  
+  # Удаляем квадратные скобки и кавычки
+  clean_string <- gsub("\\[|\\]|\"", "", answer_string)
+  
+  # Разделяем по запятой
+  parts <- str_split(clean_string, ",")[[1]]
+  
+  # Паттерн для IPv4
+  ipv4_pattern <- "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b"
+  
+  for (part in parts) {
+    part <- trimws(part)
+    if (grepl(ipv4_pattern, part)) {
+      ip_match <- regmatches(part, regexpr(ipv4_pattern, part))
+      if (length(ip_match) > 0) {
+        return(ip_match[1])
+      }
+    }
+  }
+  
+  return(NA)
+}
+
+# Основная функция для получения геоинформации по домену
+get_geo_by_domain <- function(domain) {
+  cat("Обработка домена:", domain, "\n")
+  
+  # Пытаемся найти IP в столбце answers
+  domain_data <- dns_data %>%
+    filter(query == domain, !is.na(answers), 
+           answers != "-", answers != "(empty)")
+  
+  if (nrow(domain_data) > 0) {
+    # Берем первую запись с answers
+    answer_string <- domain_data$answers[1]
+    ip <- extract_ip_from_answers(answer_string)
+    
+    if (!is.na(ip)) {
+      cat("  Найден IP в answers:", ip, "\n")
+      geo_info <- get_geo_info(ip)
+      
+      return(tibble(
+        domain = domain,
+        ip_address = ip,
+        country = geo_info$country,
+        city = geo_info$city,
+        isp = geo_info$isp,
+        org = geo_info$org,
+        source = "answers"
+      ))
+    }
+  }
+  
+  # Если не нашли в answers, ищем в id.resp_h (DNS сервер)
+  dns_server <- dns_data %>%
+    filter(query == domain) %>%
+    slice(1) %>%
+    pull(id.resp_h)
+  
+  if (!is.na(dns_server) && dns_server != "") {
+    cat("  Используем DNS сервер:", dns_server, "\n")
+    geo_info <- get_geo_info(dns_server)
+    
+    return(tibble(
+      domain = domain,
+      ip_address = dns_server,
+      country = geo_info$country,
+      city = geo_info$city,
+      isp = geo_info$isp,
+      org = geo_info$org,
+      source = "dns_server"
+    ))
+  }
+  
+  # Если ничего не нашли
+  return(tibble(
+    domain = domain,
+    ip_address = NA_character_,
+    country = "Не удалось определить IP",
+    city = "Не удалось определить IP",
+    isp = "Не удалось определить IP",
+    org = "Не удалось определить IP",
+    source = "none"
+  ))
+}
+
+# Создаем список уникальных IP для геолокации
+cat("\n=== ПОДГОТОВКА ДАННЫХ ДЛЯ ГЕОЛОКАЦИИ ===\n")
+
+# Создаем таблицу домен->IP
+domain_ip_map <- tibble()
+
+for (domain in top_10_domains) {
+  # Ищем IP в answers
+  ip_candidates <- dns_data %>%
+    filter(query == domain, !is.na(answers), 
+           answers != "-", answers != "(empty)") %>%
+    slice(1) %>%
+    pull(answers)
+  
+  if (length(ip_candidates) > 0) {
+    ip <- extract_ip_from_answers(ip_candidates[1])
+    if (!is.na(ip)) {
+      domain_ip_map <- bind_rows(domain_ip_map, 
+                                 tibble(domain = domain, 
+                                        destination_ip = ip,
+                                        source = "answers"))
+    }
+  }
+  
+  # Если не нашли, берем DNS сервер
+  if (!domain %in% domain_ip_map$domain) {
+    dns_ip <- dns_data %>%
+      filter(query == domain) %>%
+      slice(1) %>%
+      pull(id.resp_h)
+    
+    if (!is.na(dns_ip) && dns_ip != "") {
+      domain_ip_map <- bind_rows(domain_ip_map,
+                                 tibble(domain = domain,
+                                        destination_ip = dns_ip,
+                                        source = "dns_server"))
+    }
+  }
+}
+
+cat("\nСопоставление доменов и IP:\n")
+print(domain_ip_map)
+
+# Запрашиваем геоданные для уникальных IP
+cat("\n=== ЗАПРОС ГЕОДАННЫХ ===\n")
+
+geo_results_df <- tibble(
+  ip_address = character(),
+  country = character(),
+  city = character(),
+  isp = character(),
+  org = character()
+)
+
+unique_ips_to_check <- unique(na.omit(domain_ip_map$destination_ip))
+cat("Уникальных IP для проверки:", length(unique_ips_to_check), "\n")
+
+# Добавляем задержку между запросами, чтобы не превысить лимит API
+for (i in seq_along(unique_ips_to_check)) {
+  ip <- unique_ips_to_check[i]
+  cat(sprintf("[%d/%d] Запрос геоданных для IP: %s\n", i, length(unique_ips_to_check), ip))
+  
+  geo_info_row <- get_geo_info(ip)
+  geo_results_df <- bind_rows(geo_results_df, geo_info_row)
+  
+  # Пауза между запросами (чтобы не блокировали API)
+  if (i < length(unique_ips_to_check)) {
+    Sys.sleep(1.2)
+  }
+}
+
+cat("\nРезультаты геолокации IP:\n")
+print(geo_results_df)
+
+# Объединяем домены с геоданными
+cat("\n=== ФИНАЛЬНЫЕ РЕЗУЛЬТАТЫ ГЕОЛОКАЦИИ ===\n")
+
+domain_geo_info_final <- domain_ip_map %>%
+  left_join(geo_results_df, by = c("destination_ip" = "ip_address")) %>%
+  rename(ip_address = destination_ip) %>%
+  select(domain, ip_address, country, city, isp, org, source)
+
+# Добавляем количество запросов для каждого домена
+domain_geo_info_final <- domain_geo_info_final %>%
+  left_join(top_domains %>% select(query, request_count), 
+            by = c("domain" = "query")) %>%
+  arrange(desc(request_count))
+
+# Выводим результаты
+cat("\nГеолокация топ-10 доменов:\n")
+cat("============================================================================================================\n")
+cat(sprintf("%-40s %-20s %-15s %-20s %-30s\n", 
+            "Домен", "Страна", "Город", "Провайдер", "IP адрес"))
+cat("============================================================================================================\n")
+
+for (i in 1:nrow(domain_geo_info_final)) {
+  row <- domain_geo_info_final[i, ]
+  domain_display <- ifelse(nchar(row$domain) > 38, 
+                          paste0(substr(row$domain, 1, 35), "..."), 
+                          row$domain)
+  
+  cat(sprintf("%-40s %-20s %-15s %-20s %-30s\n",
+              domain_display,
+              substr(row$country, 1, 18),
+              substr(row$city, 1, 13),
+              substr(row$isp, 1, 18),
+              row$ip_address))
+}
+
+```
+
+## Оценка результата
+
+В рамках практческой работы была исследована подозрительная сетевая активность во внутренней сети Доброй Организации. Были восстановлены недостающие метаданные и подготовлены ответы на вопросы.
+
+## Вывод
+
+Работа показала, как с помощью R и dplyr можно эффективно обрабатывать и исследовать данные DNS-трафика, выявлять активных участников сети и потенциально подозрительные IP-адреса.
