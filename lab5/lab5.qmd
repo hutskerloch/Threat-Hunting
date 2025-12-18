@@ -1,0 +1,233 @@
+---
+title: "Исследование метаданных DNS трафика"
+author: "artogal@yandex.ru"
+format: 
+  md:
+    output-file: README.md
+---
+
+## Цель работы
+
+1. Получить знания о методах исследования радиоэлектронной обстановки.
+2. Составить представление о механизмах работы Wi-Fi сетей на канальном и
+сетевом уровне модели OSI.
+3. Зекрепить практические навыки использования языка программирования R для
+обработки данных
+4. Закрепить знания основных функций обработки данных экосистемы tidyverse
+языка R
+
+
+## Исходные данные
+
+1.  Компьютер
+2.  ОС Windows
+3.  Rstudio
+4.  Github
+
+## План
+
+1.  Импорт данных
+2.  Анализ точек доступа
+3.  Анализ данных клиентов
+
+## Шаг 1. Импорт библиоте и данных
+
+```{r}
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+
+Data <- read.csv('./P2_wifi_data.csv')
+head(Data)
+```
+
+## Шаг 2. Преобразование данныв в вид "аккуратных", создание датасетов
+
+```{r}
+ap_data <- read.csv('./P2_wifi_data.csv', nrows = 167, stringsAsFactors = FALSE)
+ap_data$First.time.seen <- as.POSIXct(ap_data$First.time.seen, format="%Y-%m-%d %H:%M:%S")
+ap_data$Last.time.seen  <- as.POSIXct(ap_data$Last.time.seen, format="%Y-%m-%d %H:%M:%S")
+ap_data$channel         <- as.integer(ap_data$channel)
+ap_data$Speed           <- as.numeric(ap_data$Speed)
+ap_data$Power           <- as.numeric(ap_data$Power)
+ap_data$X..beacons      <- as.integer(ap_data$X..beacons)
+ap_data$X..IV           <- as.numeric(ap_data$X..IV)
+ap_data$ESSID <- as.character(ap_data$ESSID)
+ap_data$Key   <- as.character(ap_data$Key)
+
+client_data <- read.csv('./P2_wifi_data.csv', skip = 169, stringsAsFactors = FALSE)
+client_data$First.time.seen <- as.POSIXct(client_data$First.time.seen, format="%Y-%m-%d %H:%M:%S")
+client_data$Last.time.seen  <- as.POSIXct(client_data$Last.time.seen, format="%Y-%m-%d %H:%M:%S")
+client_data$Power           <- as.numeric(client_data$Power)
+```
+
+```{r}
+client_data$X..packets  <- as.integer(client_data$X..packets)
+```
+
+```{r}
+client_data$BSSID           <- as.character(client_data$BSSID)
+client_data$Probed.ESSIDs   <- as.character(client_data$Probed.ESSIDs)
+client_data$Station.MAC     <- as.character(client_data$Station.MAC)
+```
+
+## Шаг3. Просмотр общей структуры с помощью glimpse()
+
+```{r}
+glimpse(ap_data)
+```
+```{r}
+glimpse(client_data)
+```
+
+## Шаг 4. Определить небезопасные точки доступа (без шифрования – OPN)
+
+```{r}
+OPN_ap <- ap_data %>% filter(str_detect(toupper(Privacy), "OPN")) %>% select(BSSID)
+head(OPN_ap)
+```
+
+## Шаг 5. Определить производителя для каждого обнаруженного устройства
+```{r}
+oui_data <- readLines("oui.txt")
+pattern <- "^([0-9A-Fa-f]{2}-[0-9A-Fa-f]{2}-[0-9A-Fa-f]{2})\\s+\\(hex\\)\\s+(.+)$"
+matches <- regexec(pattern, oui_data)
+parsed <- regmatches(oui_data, matches)
+parsed <- parsed[sapply(parsed, length) == 3]
+oui_df <- data.frame(
+  OUI = toupper(gsub("-", ":", sapply(parsed, `[`, 2))),
+  Manufacturer = sapply(parsed, `[`, 3),
+  stringsAsFactors = FALSE
+)
+
+OPN_ap$OUI <- toupper(substr(OPN_ap$BSSID, 1, 8))
+OPN_ap <- merge(OPN_ap, oui_df, by="OUI", all.x=TRUE)
+OPN_ap$Manufacturer[is.na(OPN_ap$Manufacturer)] <- "Unknown"
+head(OPN_ap)
+```
+
+## Шаг 6. Выявление устройств, использущие последнюю версию протокола шифрования WPA3
+
+```{r}
+ap_data %>%
+  filter(str_detect(toupper(Privacy), "WPA3")) %>%
+  select(BSSID, ESSID) %>%
+  distinct()
+```
+## Шаг 7. Сортировка точек доступа по интервалу времени
+
+```{r}
+ap_data %>% 
+  mutate(duration = as.numeric(
+    difftime(Last.time.seen, First.time.seen, units = "secs"))
+    ) %>% 
+  arrange(desc(duration)) %>% select(BSSID, duration) %>% head(10)
+```
+
+## Шаг 8. Обнаружить топ-10 самых быстрых точек
+
+```{r}
+ap_data %>% arrange(desc(Speed)) %>% head(10)
+```
+
+## Шаг 9. Сортировка точки доступа по частоте отправки запросов
+
+```{r}
+ap_data %>%  mutate(
+    duration = as.numeric(difftime(Last.time.seen, First.time.seen, units = "secs")),
+    beacons_per_second = X..beacons / duration
+  ) %>% filter(duration != 0) %>% arrange(desc(beacons_per_second)) %>% select(BSSID, beacons_per_second) %>%
+  head()
+```
+
+## Шаг 10. Определить производителя для каждого обнаруженного устройства
+
+```{r}
+Unique_Tech <- unique(client_data$BSSID)
+oui <- read.table(
+  "oui.txt",
+  sep = "\t",
+  fill = TRUE,
+  quote = "",
+  stringsAsFactors = FALSE,
+  col.names = c("OUI_raw", "Type", "Manufacturer")
+)
+oui$OUI <- toupper(gsub("-", ":", trimws(oui$OUI_raw)))
+oui$OUI <- sub("\\s+.*", "", oui$OUI)   # убираем " (hex)"
+clean_mac <- function(x) {
+  x <- toupper(trimws(x))
+  if (grepl("^([0-9A-F]{2}:){5}[0-9A-F]{2}$", x)) x else NA
+}
+extract_oui <- function(mac) {
+  if (is.na(mac)) return(NA)
+  paste(strsplit(mac, ":")[[1]][1:3], collapse=":")
+}
+find_man <- function(oui_prefix) {
+  if (is.na(oui_prefix)) return("Unknown")
+  m <- oui$Manufacturer[oui$OUI == oui_prefix]
+  if (length(m) == 0) "Unknown" else m
+}
+mac_clean <- sapply(Unique_Tech, clean_mac)
+mac_oui   <- sapply(mac_clean, extract_oui)
+manufs    <- sapply(mac_oui, find_man)
+
+result <- data.frame(
+  OUI = mac_oui,
+  Manufacturer = manufs
+)
+
+result
+```
+
+## Шаг 11. Обнаружить устройства, которые НЕ рандомизируют свой MAC адрес
+
+```{r}
+NotUniqueDevice <- client_data %>%
+  filter(!is.na(Station.MAC)) %>%                         # убираем пустые
+  filter(!toupper(substr(Station.MAC, 2, 2)) %in% c("2","6","A","E")) %>%  # локальный бит
+  select(Station.MAC) %>%
+  distinct()  
+
+head(NotUniqueDevice)
+```
+
+## Шаг 12. Кластеризовать запросы от устройств к точкам доступа по их именам. Определить время появления устройства в зоне радиовидимости и время выхода его из нее.
+
+```{r}
+grouped_data <- client_data %>%
+  group_by(Probed.ESSIDs) %>%
+  summarise(
+    unique_devices = n_distinct(Station.MAC),
+    first_time_seen = min(First.time.seen, na.rm = TRUE),
+    last_time_seen  = max(Last.time.seen, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+head(grouped_data)
+```
+
+## Шаг 13. Оценить стабильность уровня сигнала внури кластера во времени. Выявить наиболее стабильный кластер.
+
+```{r}
+shortest_sd_essid <- client_data %>%
+  mutate(duration = as.integer(difftime(Last.time.seen, First.time.seen, units = "secs"))) %>%
+  filter(duration != 0, !is.na(Probed.ESSIDs)) %>%
+  group_by(Probed.ESSIDs) %>%
+  summarise(
+    Mean = mean(duration, na.rm = TRUE),
+    Sd   = sd(duration, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(Sd) & Sd != 0) %>%
+  arrange(Sd) %>%
+  select(Probed.ESSIDs, Mean, Sd) %>%
+  slice_head(n = 1)
+
+shortest_sd_essid
+```
+
+## Оценка результатов
+В ходе лабораторной работы успешно проведен комплексный анализ журналов Wi-Fi активности с использованием языка R и tidyverse. Выполнены задачи по исследованию характеристик точек доступа и клиентских устройств, включая оценку их безопасности, производителей, параметров работы и сетевого поведения.
+
+## Вывод
+В практической работе мы использовали навыки написания кода на языке программирования R для обработки данных и закрепили знания основных функций обработки данных экосистемы tidyverse языка R.
