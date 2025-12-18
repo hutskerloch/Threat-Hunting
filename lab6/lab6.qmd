@@ -1,0 +1,125 @@
+---
+title: "Исследование вредоносной активности в домене Windows"
+author: "artogal@yandex.ru"
+format: 
+  md:
+    output-file: README.md
+---
+
+## Цель работы
+1. Закрепить навыки исследования данных журнала Windows Active Directory
+2. Изучить структуру журнала системы Windows Active Directory
+3. Зекрепить практические навыки использования языка программирования R для
+обработки данных
+4. Закрепить знания основных функций обработки данных экосистемы tidyverse
+языка R
+
+## Исходные данные
+
+1.  Компьютер
+2.  ОС Windows
+3.  Rstudio
+4.  Github
+
+## План
+
+1. Импорт данных
+2. Анализ данных
+
+## Шаг 1. Загрузка библиотек и импорт данных
+
+```{r}
+library(jsonlite)
+library(dplyr)
+library(tidyr)
+library(xml2)
+library(rvest)
+library(readr)
+
+url <- "https://storage.yandexcloud.net/iamcth-data/dataset.tar.gz"
+temp_file <- tempfile(fileext = ".tar.gz")
+download.file(url, temp_file, mode = "wb")
+
+untar(temp_file, exdir = tempdir())
+
+
+data_path <- list.files(tempdir(), pattern = "\\.json$", full.names = TRUE)[1]
+log_data <- stream_in(file(data_path))
+```
+
+## Шаг 2. Просмотр общей структуры
+
+```{r}
+glimpse(log_data)
+```
+
+## Шаг 3. Анализ и преобразование данных
+
+```{r}
+log_flat <- log_data %>%
+  unnest(cols = everything(), names_sep = "_")
+
+glimpse(log_flat)
+
+log_clean <- log_flat %>%
+  select(where(~ n_distinct(.) > 1))
+
+
+glimpse(log_clean)
+```
+
+```{r}
+webpage_url <- "https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/appendix-l--events-to-monitor"
+webpage <- read_html(webpage_url)
+event_df <- html_table(webpage, fill = TRUE)[[1]]
+names(event_df)
+```
+
+## Шаг 4. Кол-во уникальных хостов.
+
+```{r}
+hosts_count <- log_clean %>%
+  distinct(winlog_computer_name) %>%
+  nrow()
+
+head(hosts_count)
+```
+
+## Шаг 5. Подготовка датафрейма с расшифровкой Windows Event_ID
+
+```{r}
+event_df <- event_df %>%
+  rename(
+    Event_ID    = `Current Windows Event ID`,
+    Legacy_ID   = `Legacy Windows Event ID`,
+    Criticality = `Potential Criticality`,
+    Summary     = `Event Summary`
+  ) %>%
+  mutate(Event_ID = suppressWarnings(as.integer(Event_ID))) %>%
+  filter(!is.na(Event_ID))
+```
+
+```{r}
+glimpse(event_df)
+```
+
+## Шаг 6. События с высоким и средним уровнем значимости
+
+```{r}
+log_h <- sum(log_clean$log$level == "High") 
+cat("События с уровнем high: ")
+log_h
+```
+
+```{r}
+log_m <- sum(log_clean$log$level == "Medium")
+cat("События с уровнем medium: ")
+log_m
+```
+
+## Оценка результата
+
+В ходе работы была проанализирована выгрузка из SIEM‑системы организации на предмет возможной компрометации.
+
+## Вывод
+Исследование позволило изучить структуру журнала Windows Active Directory, закрепить навыки обработки данных в R и освоить основные функции экосистемы tidyverse.
