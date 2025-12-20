@@ -1,8 +1,7 @@
 ---
 author: "artogal@yandex.ru"
-format: 
-  md:
-    output-file: README.md
+title: "README"
+format: md
 ---
 
 # Использование технологии Yandex DataLens для анализа данных сетевой активности
